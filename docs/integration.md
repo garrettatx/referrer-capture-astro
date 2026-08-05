@@ -2,8 +2,8 @@
 
 How to add attribution capture to an Astro site.
 
-The package is not built yet, so treat this as the target. Once `v1.0.0` is tagged,
-these steps work as written. Design reasoning lives in [PLAN.md](PLAN.md).
+Released as v1.0.1 and running in production. These steps work as written. Design
+reasoning lives in [PLAN.md](PLAN.md).
 
 ---
 
@@ -27,7 +27,7 @@ form is broken, fix that before adding anything here.
 ## Step 1. Install
 
 ```bash
-npm install github:garrettatx/referrer-capture-astro#v1.0.0
+npm install github:garrettatx/referrer-capture-astro#v1.0.1
 ```
 
 Pin the tag. Do not point at `main`. A pinned tag means the package cannot change

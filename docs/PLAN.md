@@ -3,7 +3,7 @@
 The design for `referrer-capture-astro`, the reasoning behind each decision, and the
 order it gets built in.
 
-Status: planned, not built.
+Status: built and released as v1.0.1. This document is the design record.
 
 ---
 

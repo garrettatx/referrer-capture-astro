@@ -18,8 +18,8 @@
 
 ---
 
-> **Status: planned, not built.** The design is settled and documented. The API below
-> is the target, not something you can install today. Watch the repo for `v1.0.0`.
+> **Status: v1.0.1, in production.** 104 tests. Prebuilt ESM and type declarations
+> ship in the repo, so there is no build step for consumers.
 
 ## What This Does
 
@@ -27,8 +27,8 @@ A visitor finds your site through a Google search, browses for a while, then fil
 your contact form. The notification email tells you their name and their message. It
 does not tell you that search brought them in.
 
-This package closes that gap. It records where a visitor came from when they arrive,
-carries it through their session, and attaches it to the form submission, so your
+This package closes that gap. It records the visitor's traffic source when they arrive,
+carries it through their session, and attaches it to the form submission, so your lead
 notification reads:
 
 ```
@@ -91,7 +91,7 @@ That per-lead detail changes what you do next:
 ## Quick Start
 
 ```bash
-npm install github:garrettatx/referrer-capture-astro#v1.0.0
+npm install github:garrettatx/referrer-capture-astro#v1.0.1
 ```
 
 Capture on every page, from your base layout:
@@ -184,8 +184,10 @@ has no runtime dependencies.
 
 - **[Integration guide](docs/integration.md).** Step-by-step setup, configuration,
   testing, troubleshooting, and how to hand this to an AI assistant.
+- **[API reference](docs/api.md).** Every export, its options, and its return shape.
 - **[Design and build plan](docs/PLAN.md).** Attribution model, data contract, channel
   taxonomy, QA matrix, and the reasoning behind each decision.
+- **[Changelog](CHANGELOG.md).** What changed and why.
 
 ## Contributing
 
@@ -194,11 +196,15 @@ Start there.
 
 ```bash
 npm install
-npm test
+npm test      # builds, then runs 104 tests
 ```
 
-Adding a domain to the search, social, or AI maps in `src/config/` is a useful,
-low-risk first contribution.
+Classification and normalization are pure functions in `src/core/`, with no Astro,
+platform, or DOM imports. That is what keeps them testable.
+
+Adding a domain to the search, social, AI, or webmail maps in `src/config/` is a
+useful, low-risk first contribution. Matching order is email, then AI, then search,
+then social, because webmail and AI assistants live on search engine domains.
 
 ## License
 
