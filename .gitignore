@@ -23,3 +23,7 @@ coverage/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Local notes. Rollout logs, per-site integration details, lessons learned.
+# Kept out of the public repo on purpose: it names internal sites and endpoints.
+notes/

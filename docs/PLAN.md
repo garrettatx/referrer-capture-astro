@@ -1,159 +1,121 @@
-# referrer-capture-astro — build plan
+# Design and Build Plan
 
-Portable lead-attribution capture for Astro sites. Canonical source lives in this
-repo; consuming sites depend on it rather than copying it.
+The design for `referrer-capture-astro`, the reasoning behind each decision, and the
+order it gets built in.
 
-Status: plan, not built. Written 2026-08-05 against Pride and Prairie as the first
-consumer.
-
----
-
-## 1. What this is for
-
-One job: **tell the person reading the lead email where that lead came from.**
-
-GA4 already reports source/medium in aggregate. What GA4 cannot do is tell the
-person reading the notification that *this specific inquiry* arrived from a Google
-organic search on `/services/`.
-That per-lead join is the entire value. Everything in this plan is scoped to that,
-and anything that does not serve it is out.
-
-That framing matters because the research this plan responds to drifts steadily
-toward rebuilding GA4 — confidence scores, storage-state fields, dual raw and
-normalized fields on the wire, schema versioning across four layers. Each is
-defensible alone. Together they are a tracking project attached to a contact form,
-and the contact form is the thing that actually makes money.
+Status: planned, not built.
 
 ---
 
-## 2. Pushback on the incoming spec
+## 1. What This Is For
 
-The research is good on principles and wrong on several specifics for this stack.
-Taking it as written would mean rebuilding a contact pipeline that currently works.
+One job. Tell the person reading a lead notification where that lead came from.
 
-### 2.1 Astro Actions are not available on Pride and Prairie
+Analytics platforms report source and medium in aggregate. They cannot tell you that
+this particular inquiry arrived from an organic search that landed on `/services/`.
+Joining attribution to a single submission is the value here, and it sets the
+boundary for everything below.
 
-The spec recommends Astro Actions for the backend in four separate places. P&P is
-**pure SSG** — `astro.config.mjs` sets no `output` and no adapter. Actions require
-a server runtime. Adopting them means adding `@astrojs/cloudflare`, switching to
-`output: 'server'` or hybrid, and rewriting the submission path.
+That boundary needs defending. Attribution systems drift toward rebuilding analytics:
+confidence scores, storage-state fields, parallel raw and normalized values on the
+wire, schema versioning at every layer. Each addition is defensible on its own.
+Together they turn a contact form into a tracking project, and the contact form is
+the part that earns money.
 
-The submission path is a Cloudflare Pages Function at `functions/api/contact.js`
-that was just hardened and verified end to end. There is no attribution reason to
-replace it. Garrett Digital *does* run the Cloudflare adapter, which is probably
-where the Actions advice came from — that is a per-site fact, not a shared one.
+---
 
-**Decision: the package must be transport-agnostic.** Core normalization is a pure
-function with no Astro imports. Ship a Pages Function helper for P&P and an Actions
-helper for adapter sites. Neither is required to use the core.
+## 2. Design Decisions
 
-### 2.2 "Must work with JavaScript disabled" is already moot
+### 2.1 The Core Is Transport-Agnostic
 
-The spec requires JS-disabled support and specifies a server-side referrer parser
-as the fallback that delivers it. Neither applies here.
+Astro sites submit forms in several ways. Astro Actions on SSR and hybrid builds, a
+platform function on static builds, a third-party endpoint, a native form post. A
+package that assumes one of these locks out the rest.
 
-P&P's contact form is a `fetch()` submission behind `e.preventDefault()`. With JS
-disabled the form does not submit at all — there is no lead to attribute. Attribution
-requiring JS adds **zero** new failure modes.
+Static builds are the common case and have no server runtime, so Actions are
+unavailable to them until you add an adapter and convert the site to SSR. That is a
+large change to make for attribution alone.
 
-The server-side fallback is worse than unnecessary; on this architecture it barely
-works. Pages are static HTML served from Cloudflare's edge cache. The Function only
-runs on the `POST /api/contact/`, by which point `Referer` is the P&P contact page
-itself. The original external referrer is long gone. Recovering it server-side would
-require middleware on every HTML request, which costs full-page caching on a site
-whose pitch is "loads in under a second."
+**Decision.** Normalization is a pure function with no Astro, platform, or DOM
+imports. Adapters for Astro Actions and Cloudflare Pages Functions ship alongside it.
+Neither is required to use the core.
 
-**Decision: client-side capture only. Cut the server-side referrer parser.** The
-server still normalizes and sanitizes — that stays, and it is where the real work
-happens.
+### 2.2 Capture Runs in the Browser
 
-### 2.3 localStorage, not cookies
+A server-side referrer parser sounds like useful redundancy. On a static site it is
+close to useless.
 
-The spec leads with cookies. Cookies are only better when the server needs to read
-them, and here nothing server-side does. Meanwhile every cookie rides along on every
-request — HTML, CSS, fonts, images — for zero benefit.
+Pages are HTML served from a CDN edge cache. The server only runs when the form is
+submitted, and by then the `Referer` header points at the site's own contact page.
+The original external referrer is gone. Recovering it server-side means running
+middleware on every HTML request, which costs full-page caching.
 
-Garrett Digital's existing tracker sets **nine** cookies on `.garrettdigital.com`.
-That is a few hundred bytes added to every asset request on every page.
+It also guards a case that mostly does not exist. A form submitted by `fetch()`
+already requires JavaScript, so attribution requiring JavaScript adds no new failure
+mode. Sites using native form posts are the exception, and they read the record from
+hidden inputs.
 
-**Decision: one versioned `localStorage` record.** `sessionStorage` fallback if
-`localStorage` throws (Safari private mode, storage-partitioned iframes). If both
-fail, capture in-memory for the current page and carry on.
+**Decision.** Capture client-side. The server validates, sanitizes, and normalizes,
+which is where the work that matters happens.
 
-### 2.4 The field list is roughly twice the size it needs to be
+### 2.3 localStorage, Not Cookies
 
-Fifteen `refcap_` hidden inputs, with raw and normalized variants both on the wire,
-plus `capture_confidence`, `storage_state`, and `consent_state`.
+Cookies win when the server needs to read a value during a request. Nothing here
+does. Meanwhile the browser attaches every cookie to every request it makes,
+including HTML, CSS, fonts, and images, adding bytes to each one for no return.
 
-Two problems. First, P&P's form does not serialize DOM inputs at all — it builds a
-JSON body by hand, so hidden fields are not even the mechanism here. Second,
-shipping raw *and* normalized from the client means normalizing twice in two places,
-which is exactly how the two drift apart.
+**Decision.** One versioned `localStorage` record, falling back to `sessionStorage`
+if `localStorage` throws, which happens in Safari private mode and partitioned
+iframes. If both fail, capture in memory for the current page and continue.
 
-**Decision: the client sends raw only, in one compact JSON object. The server
-normalizes once.** For sites that use native form posts, the package also exposes
-`mountHiddenFields(form)` — the mechanism is a per-site choice, not part of the
-contract.
+### 2.4 The Client Sends Raw Values, the Server Normalizes Once
 
-`capture_confidence` is a number nobody will ever act on. Drop it. `capture_method`
-(`utm` / `click-id` / `referrer` / `direct`) is worth keeping — it is
-self-explanatory and answers "why does this say what it says."
+Sending raw and normalized values together from the browser puts the mapping logic in
+two places. Those copies drift, and when they disagree nothing tells you which one
+produced a given record.
 
-### 2.5 Pick one attribution model and apply it consistently
+**Decision.** One compact JSON object of raw values on the wire. Normalization runs
+once, server-side. Sites posting natively can use `mountHiddenFields(form)`. Transport
+is a per-site choice and sits outside the data contract.
 
-The GD tracker (`garrettdigital/src/scripts/lead-source-tracker.ts`) documents its
-own split brain in the header comment:
+A confidence score is excluded on purpose. Nobody acts on it. `capture_method`
+(`utm`, `click-id`, `referrer`, `direct`) stays, because it answers the question a
+reader has, which is why the record says what it says.
 
-```
-* - UTM params / gclid: last-touch (overwritten on each new tagged visit)
-* - Referrer classification: first-touch (set once, never overwritten)
-```
+### 2.5 One Attribution Model, Applied to Every Signal
 
-So a visitor who arrives from an ad, leaves, and returns via organic search keeps
-the ad as source. A visitor who arrives from organic, leaves, and returns via ad
-gets the ad. Same journey shape, different answers depending on which touch was
-tagged. This is the "strategically ambiguous" failure the research warns about, and
-it is live today.
+A common failure is running different models on different signals: campaign tags
+treated as last touch, referrers treated as first touch. The answer then depends on
+which touch happened to carry a tag. Someone arriving from an ad and returning
+through search keeps the ad. Someone arriving through search and returning via an ad
+also gets the ad. Same journey shape, two different answers, no way to explain
+either one.
 
-**Decision: store first touch and last non-direct touch. Apply the same rule to
-UTMs and referrers. Report last non-direct touch as primary.** Direct visits never
-overwrite a known source. Both are cheap to keep and answer different questions.
+**Decision.** Store first touch and last non-direct touch. Apply the same rule to
+campaign tags and referrers. Report last non-direct touch. Direct visits never
+overwrite a known source.
 
-### 2.6 Keep the AI-referral channel
+### 2.6 AI Assistants Get Their Own Channel
 
-The incoming spec's channel list omits it. The existing GD tracker already
-classifies `chatgpt`, `perplexity`, `claude`, `gemini`, and `copilot` as
-`ai-referral`.
+A growing share of qualified traffic arrives from AI assistants rather than search
+results. Filing it under generic `referral` hides the trend moving fastest.
 
-For an SEO agency in 2026 this is arguably the single most interesting line in the
-email. It is prior art worth carrying forward, not dropping because a generic spec
-did not think of it.
+**Decision.** `ai-referral` is a first-class channel.
 
-### 2.7 Consent: do not build a CMP
+### 2.7 Consent Is a Hook, Not a Feature
 
-The spec treats consent as a hard gate, weighted toward EU CMP requirements. Not
-every consuming site runs a CMP, and several already load analytics directly.
+Consent requirements vary by jurisdiction and by site, and many sites already run a
+platform that owns the decision.
 
-**Decision: ship a `shouldCapture()` config hook, default permissive, documented.**
-Sites that need a consent gate wire their CMP into that hook. This package does not
-build consent UI and does not assume one exists.
+**Decision.** Expose a `shouldCapture()` hook, default permissive, documented. Sites
+needing a gate wire their consent platform into it. This package ships no consent UI
+and assumes none exists.
 
-### 2.8 Skip hidden-field tamper detection
+### 2.8 No Payload Signing
 
-The stakes are a wrong word in an email. Signing the payload is real complexity for
-no protection. Sanitize, length-cap, and allow-list before anything reaches a
-header or an email body. That is the whole threat model.
-
-### 2.9 "Copy it in, but keep this canonical with a link" is contradictory
-
-A copy does not update when the canonical improves. Resolved in §7.
-
-### 2.10 Repo name
-
-You said `referrer-capture-astro`. The pasted spec says `referral-capture-astro`
-throughout. I have used **`referrer-capture-astro`** — your wording, and more
-accurate, since referrer is only one of the signals but "referral" is also a
-specific channel name, which would be confusing.
+A tampered attribution value produces a wrong word in an email. Signing the payload
+costs real complexity and buys little against that. Sanitizing, length-capping, and
+allow-listing before any value reaches a header or an email body covers the threat.
 
 ---
 
@@ -161,46 +123,48 @@ specific channel name, which would be confusing.
 
 **In**
 
-- Client capture of UTMs, ad click IDs, and referrer on landing.
-- First-party persistence across the session, surviving internal navigation and
-  the `/` ↔ `/es/` language switch.
-- Server-side normalization to a stable source / medium / channel taxonomy.
-- Two or three readable lines in the notification email.
-- Portable package, consumed by P&P first.
+- Client capture of campaign parameters, ad click IDs, and referrer on landing.
+- First-party persistence across a session, surviving internal navigation, including
+  moves between localized versions of the same page.
+- Server-side normalization to a stable source, medium, and channel taxonomy.
+- A short attribution block in the notification email.
 
 **Out**
 
-- Form storage / database. Explicitly cut by you. See §10 for what that implies.
-- Multi-touch attribution, paid-media reporting, dashboards.
+- Submission storage. This package persists no form data.
+- Multi-touch attribution, paid media reporting, dashboards.
 - Consent UI.
-- Replacing or duplicating GA4.
-- Endpoint concerns that belong to the host site rather than to attribution:
-  rate limiting, origin allow-listing, spam heuristics. These are properties of a
-  submission endpoint, not of attribution capture. A consuming site may already
-  have them; this package must not assume it does and must not ship its own.
-- Any change that makes lead capture depend on attribution succeeding.
+- Duplicating an analytics platform.
+- Endpoint concerns that belong to the host site: rate limiting, origin
+  allow-listing, spam heuristics. These are properties of a submission endpoint. A
+  consuming site may already have them, so this package neither assumes them nor
+  ships its own.
+- Anything that makes lead capture depend on attribution succeeding.
 
 ---
 
-## 4. Attribution model
+## 4. Attribution Model
 
 | | Rule |
 |---|---|
-| Primary reported value | Last non-direct touch |
+| Reported value | Last non-direct touch |
 | Also stored | First touch |
-| Precedence within a touch | UTM params → ad click ID → referrer → direct |
-| Overwrite rule | A new **non-direct** touch updates `last`. Direct visits never overwrite. `first` is written once and never changes. |
-| Internal navigation | Never counts as a touch. Referrer matching the current host is ignored. |
-| Lookback window | 90 days. This is how long the visitor's own browser keeps its attribution record before it expires, matching GA4's default acquisition lookback so the email agrees with GA4 reports. It is not submission storage, which is out of scope. Configurable per site. |
+| Precedence within a touch | Campaign parameters, then ad click ID, then referrer, then direct |
+| Overwrite rule | A new non-direct touch updates `last`. Direct visits never overwrite. `first` is written once. |
+| Internal navigation | Never a touch. A referrer matching the current host is ignored. |
+| Lookback window | 90 days. How long the visitor's browser keeps its record before it expires. Matches the default acquisition lookback in common analytics platforms, so the email agrees with their reports. Configurable. |
 
-Language switches (`/contact/` → `/es/contact/`) are internal navigation and must
-not reset attribution. This is a real path on P&P and belongs in the test matrix.
+Localized routes such as `/contact/` and `/es/contact/` count as internal navigation
+and must not reset attribution.
+
+The lookback window governs the visitor's own browser storage. This package stores no
+submissions.
 
 ---
 
-## 5. Data contract
+## 5. Data Contract
 
-### Stored record (localStorage, key `rc_attr`)
+### Stored Record (localStorage, key `rc_attr`)
 
 ```jsonc
 {
@@ -218,138 +182,129 @@ not reset attribution. This is a real path on P&P and belongs in the test matrix
 }
 ```
 
-### Wire payload
+### Wire Payload
 
-The client adds **one** key to the existing JSON POST body:
+One added key on the submission:
 
 ```jsonc
 "attribution": { /* the record above, serialized, hard-capped at 2 KB */ }
 ```
 
-Nothing else changes in the request. If the key is missing, malformed, oversized,
-or fails to parse, the server drops it and processes the lead normally.
+Missing, malformed, oversized, or unparseable, the server drops it and processes the
+submission normally.
 
-The attribution blob is a new untrusted input, so the 2 KB cap on it must sit inside
-a whole-body size cap on the endpoint. Consuming sites that do not already cap
-request bodies need to add one as part of integration.
+The blob is untrusted input, so its 2 KB cap belongs inside a whole-body size cap on
+the endpoint. Sites without one should add it during integration.
 
-### Normalized output (server, never sent by the client)
+### Normalized Output (Server-Side)
 
 `source` · `medium` · `channel` · `campaign` · `landing_page` · `referrer_domain` ·
 `capture_method` · `first_touch_source` · `first_touch_at`
 
-Lowercase, hyphen-separated, no spaces. Unknown → `unknown`. No source → `direct` /
-`none`, matching GA4's `(direct) / (none)` convention without the parentheses.
+Lowercase, hyphen-separated, no spaces. Unknown resolves to `unknown`. No source
+resolves to `direct` / `none`.
 
 ---
 
-## 6. Channel taxonomy
-
-Aligned to GA4 default channel groups, plus `ai-referral`.
+## 6. Channel Taxonomy
 
 | Channel | Trigger |
 |---|---|
-| `paid-search` | `gclid` / `gbraid` / `wbraid` / `msclkid`, or `utm_medium` in {cpc, ppc, paid-search, paidsearch} |
-| `organic-search` | Search-engine referrer with no click ID, or `utm_medium=organic` |
-| `paid-social` | `utm_medium` in {paid-social, paidsocial}, or social referrer + click ID |
-| `organic-social` | Social-domain referrer, or `utm_medium` in {social, organic-social} |
-| `ai-referral` | ChatGPT, Perplexity, Claude, Gemini, Copilot referrer |
-| `email` | `utm_medium=email`, or a known mail-client referrer |
+| `paid-search` | `gclid`, `gbraid`, `wbraid`, `msclkid`, or `utm_medium` in {cpc, ppc, paid-search, paidsearch} |
+| `organic-search` | Search engine referrer with no click ID, or `utm_medium=organic` |
+| `paid-social` | `utm_medium` in {paid-social, paidsocial}, or a social referrer carrying a click ID |
+| `organic-social` | Social platform referrer, or `utm_medium` in {social, organic-social} |
+| `ai-referral` | AI assistant referrer |
+| `email` | `utm_medium=email`, or a known mail client referrer |
 | `referral` | Any other external referrer |
-| `direct` | No referrer, no UTM, no click ID |
+| `direct` | No referrer, no campaign parameters, no click ID |
 | `other` | Tagged but unmappable |
 
-Domain and alias maps live in `src/config/` as plain data so a site can extend them
-without touching core logic. Seed the maps from the existing GD tracker — the search,
-social, and AI lists there are already correct and field-tested.
+Domain and alias maps live in `src/config/` as plain data, so a site can extend them
+without touching core logic.
 
-Click IDs to capture: `gclid`, `gbraid`, `wbraid`, `msclkid`, `fbclid`, `ttclid`.
-The GD tracker only handles `gclid`.
+Click IDs captured: `gclid`, `gbraid`, `wbraid`, `msclkid`, `fbclid`, `ttclid`.
 
 ---
 
-## 7. Distribution — how "canonical with a link" actually works
+## 7. Distribution
 
-You asked for the code copied into P&P *and* for this repo to stay canonical *and*
-for improvements to propagate. A copy cannot do the third.
+Target sites depend on this repository rather than copying the code into their own. A
+copy stops receiving improvements the moment it is made, which defeats the point of
+having a canonical source.
 
-**Recommendation: a GitHub-hosted npm dependency, version-pinned.**
+Use a GitHub-hosted npm dependency, pinned to a tag:
 
 ```jsonc
-// prideandprairie/package.json
+// your target Astro site's package.json
 "dependencies": {
   "referrer-capture-astro": "github:garrettatx/referrer-capture-astro#v1.0.0"
 }
 ```
 
-- No npm publishing, no registry account, private repo is fine.
-- Improvements land here, then each site moves its tag deliberately. No surprise
-  changes mid-deploy.
-- Cloudflare Pages installs from GitHub at build time with no extra configuration.
-- One canonical source, genuinely linked.
+- No registry publishing required, and private consumers work.
+- Improvements land here, then each site moves its pin when ready. Nothing changes
+  under a site mid-deploy.
+- Installs at build time on common hosts with no extra configuration.
 
-Ship prebuilt ESM + `.d.ts` in the repo so consumers need no build step.
+Prebuilt ESM and type declarations ship in the repository, so consumers need no build
+step.
 
-Alternatives considered: **git submodule** — propagates, but submodules are a
-recurring footgun on CI and for anyone cloning. **Copy + sync script** — what you
-described; drifts the moment someone hotfixes a consuming site. **Real npm publish**
-— fine later if this ever goes public; unnecessary now.
+Alternatives considered. Git submodules propagate but cause recurring CI and clone
+problems. A copy plus a sync script drifts the first time someone patches a target
+site directly. Registry publishing is reasonable later and unnecessary now.
 
 ---
 
-## 8. Repo layout
+## 8. Repository Layout
 
 ```
 referrer-capture-astro/
 ├── src/
 │   ├── core/
 │   │   ├── normalize.ts        # pure: raw record → normalized output
-│   │   ├── classify.ts         # referrer/UTM → source, medium, channel
+│   │   ├── classify.ts         # referrer and campaign params → source, medium, channel
 │   │   └── types.ts
 │   ├── client/
-│   │   ├── capture.ts          # landing capture + persistence
-│   │   └── mount.ts            # toJSON() and mountHiddenFields(form)
+│   │   ├── capture.ts          # landing capture and persistence
+│   │   └── mount.ts            # getAttribution() and mountHiddenFields(form)
 │   ├── server/
 │   │   └── parse.ts            # validate, cap, sanitize, normalize
 │   ├── adapters/
-│   │   ├── pages-function.ts   # Cloudflare Pages Function (P&P)
-│   │   └── astro-action.ts     # adapter sites (Garrett Digital)
+│   │   ├── pages-function.ts
+│   │   └── astro-action.ts
 │   └── config/
 │       ├── search.ts  social.ts  ai.ts  aliases.ts
 ├── docs/
-│   ├── PLAN.md  install.md  integration-astro.md  qa-checklist.md  privacy.md
 ├── tests/
-└── examples/prideandprairie/
+└── examples/
 ```
 
-Core imports nothing from Astro, Cloudflare, or the DOM. That is what makes it
-testable and portable.
+Core imports nothing from Astro, a hosting platform, or the DOM. That is what keeps
+it testable and portable.
 
 ---
 
-## 9. Pride and Prairie integration
+## 9. Integrating With a Static Astro Site
 
-Four touch points, all small:
+Four touch points.
 
-1. `BaseLayout.astro` — one inline script calling `capture()` on load. No
-   hydration, no island. P&P has no view transitions, so a plain script is correct;
-   if `ClientRouter` is ever added, re-run on `astro:page-load` per the GA4 pattern
-   already established in this workspace.
-2. `Contact.astro` — add `attribution: getAttribution()` to the existing JSON body.
-   One line.
-3. `functions/api/contact.js` — parse, normalize, append to the email. Wrapped in
-   try/catch that swallows everything.
-4. `package.json` — the dependency.
+1. **Layout.** One inline script calling `capture()` on load. No hydration, no island.
+   On sites using view transitions, re-run it on `astro:page-load`.
+2. **Form.** Add the attribution record to the submission payload, or mount hidden
+   inputs for a native post.
+3. **Endpoint.** Parse, normalize, append to the notification, wrapped so any failure
+   is swallowed.
+4. **package.json.** The pinned dependency.
 
-The non-negotiable: **the `try/catch` around attribution must never be able to fail
-a submission.** If normalization throws, the lead sends with `unknown`. This gets an
-explicit test.
+One rule holds above the rest: attribution must never fail a submission. If
+normalization throws, the lead sends with `unknown`. That gets an explicit test.
 
 ---
 
-## 10. Email output
+## 10. Email Output
 
-Appended to the existing plain-text and HTML bodies:
+Appended to the notification body:
 
 ```
 --- Where this lead came from ---
@@ -359,80 +314,68 @@ Landing page: /services/
 First touch:  google / organic on Aug 1
 ```
 
-Rules: normalized values only; raw referrer shown only when the channel is
-`referral` or `other`; omit empty lines rather than printing `unknown` five times;
-one explicit line when nothing was captured (`Attribution: none captured (direct
-or blocked)`) so a blank section is never ambiguous.
+Normalized values only. Show the raw referrer when the channel is `referral` or
+`other`. Omit empty lines rather than printing `unknown` five times. When nothing was
+captured, say so on one explicit line, so a blank section is never ambiguous.
 
-Storage is out of scope per your call, so the email carries the attribution. The
-only design consequence for this package: the email block has to be self-contained
-and readable on its own, since nothing downstream will re-render it.
+This package stores nothing, so the email carries the attribution and the block has
+to read on its own.
 
 ---
 
-## 11. QA matrix
+## 11. QA Matrix
 
-Every row asserts two things: the lead **submits successfully**, and attribution
-resolves to the expected value or a clean fallback.
+Every row asserts two things. The submission succeeds, and attribution resolves to
+the expected value or a clean fallback.
 
 | Scenario | Expected |
 |---|---|
-| Google organic | `google / organic` · organic-search |
-| Google Ads (`gclid`) | `google / cpc` · paid-search |
-| Microsoft Ads (`msclkid`) | `bing / cpc` · paid-search |
-| UTM-tagged email | `newsletter / email` · email |
-| Facebook referral | `facebook / organic-social` |
-| ChatGPT referral | `chatgpt / ai-referral` |
+| Organic search | `google / organic` · organic-search |
+| Paid search (`gclid`) | `google / cpc` · paid-search |
+| Paid search (`msclkid`) | `bing / cpc` · paid-search |
+| Tagged email campaign | `newsletter / email` · email |
+| Social referral | `facebook / organic-social` |
+| AI assistant referral | `chatgpt / ai-referral` |
 | Plain referral | `example-com / referral` |
 | Direct, no referrer | `direct / none` |
-| Ad → leaves → returns direct | ad retained (last non-direct) |
-| Organic → later ad click | ad wins; first touch keeps organic |
-| Internal nav before submit | unchanged |
-| `/contact/` → `/es/contact/` | unchanged |
-| localStorage blocked | submits; `unknown` |
-| Storage cleared mid-session | submits; recaptured or `unknown` |
-| Malformed / hostile UTM values | sanitized, length-capped, submits |
-| Oversized `attribution` (>2 KB) | dropped, submits |
-| Capture module throws | submits; `unknown` |
-| Origin-only / trimmed referrer | domain-level classification |
-| Submitted from a different page than landing | landing page retained |
+| Paid click, later direct return | paid retained, as last non-direct |
+| Organic first, later paid click | paid wins, first touch keeps organic |
+| Internal navigation before submit | unchanged |
+| Localized route switch | unchanged |
+| localStorage blocked | submits, `unknown` |
+| Storage cleared mid-session | submits, recaptured or `unknown` |
+| Malformed or hostile parameter values | sanitized, capped, submits |
+| Oversized payload above 2 KB | dropped, submits |
+| Capture module throws | submits, `unknown` |
+| Referrer trimmed to origin | domain-level classification |
+| Submitted from a page other than the landing page | landing page retained |
 
-The last four are the ones that actually protect revenue.
+The last several rows protect revenue. Treat them as the priority.
 
 ---
 
-## 12. Build order
+## 12. Build Order
 
-1. `core/` — types, classify, normalize, plus unit tests. Pure functions, no I/O.
-2. `server/parse.ts` — validation, caps, sanitization.
-3. `client/capture.ts` — capture and persistence.
-4. Pages Function adapter + email rendering.
-5. P&P integration behind the dependency.
+1. `core/`. Types, classify, normalize, with unit tests. Pure functions, no I/O.
+2. `server/parse.ts`. Validation, caps, sanitization.
+3. `client/capture.ts`. Capture and persistence.
+4. Adapters and email rendering.
+5. Reference integration.
 6. QA matrix.
 7. Docs, then tag `v1.0.0`.
 
-Steps 1–2 are most of the value and carry all the logic worth testing. Nothing
-touches P&P until step 5.
+Steps 1 and 2 carry the logic worth testing.
 
 ---
 
-## 13. Acceptance criteria
+## 13. Acceptance Criteria
 
-- Contact form submits successfully in every row of §11, including the failure rows.
-- Attribution never blocks, delays, or fails a submission — proven by a test that
-  forces the capture module to throw.
+- Submissions succeed in every row of §11, including the failure rows.
+- Attribution never blocks, delays, or fails a submission. A test forces the capture
+  module to throw and proves it.
 - Normalization runs exactly once, server-side.
-- Email shows normalized source and medium, and says so explicitly when nothing
+- The email shows normalized source and medium, and says so explicitly when nothing
   was captured.
-- Core has no Astro, Cloudflare, or DOM imports.
-- A second Astro site can integrate from `docs/` alone.
-- P&P consumes a pinned tag, not a copy.
-
----
-
-## 14. Decisions needed from you
-
-1. **Migrate Garrett Digital too?** GD's tracker has the split-brain model in §2.5
-   and only handles `gclid`. Converging both sites is the point of building this as
-   a package, but GD is WordPress + Formidable and a bigger job. Recommend P&P
-   first, GD second, as separate work.
+- Core has no Astro, platform, or DOM imports.
+- A site can integrate from `docs/` alone.
+- Target sites depend on a pinned tag rather than a copy.
