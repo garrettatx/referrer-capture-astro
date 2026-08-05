@@ -174,6 +174,10 @@ specific channel name, which would be confusing.
 - Multi-touch attribution, paid-media reporting, dashboards.
 - Consent UI.
 - Replacing or duplicating GA4.
+- Endpoint concerns that belong to the host site rather than to attribution:
+  rate limiting, origin allow-listing, spam heuristics. These are properties of a
+  submission endpoint, not of attribution capture. A consuming site may already
+  have them; this package must not assume it does and must not ship its own.
 - Any change that makes lead capture depend on attribution succeeding.
 
 ---
@@ -187,7 +191,7 @@ specific channel name, which would be confusing.
 | Precedence within a touch | UTM params → ad click ID → referrer → direct |
 | Overwrite rule | A new **non-direct** touch updates `last`. Direct visits never overwrite. `first` is written once and never changes. |
 | Internal navigation | Never counts as a touch. Referrer matching the current host is ignored. |
-| Retention | 90 days, configurable. Record carries `v` for schema migration. |
+| Lookback window | 90 days. This is how long the visitor's own browser keeps its attribution record before it expires, matching GA4's default acquisition lookback so the email agrees with GA4 reports. It is not submission storage, which is out of scope. Configurable per site. |
 
 Language switches (`/contact/` → `/es/contact/`) are internal navigation and must
 not reset attribution. This is a real path on P&P and belongs in the test matrix.
@@ -428,10 +432,7 @@ touches P&P until step 5.
 
 ## 14. Decisions needed from you
 
-1. **GitHub repo** — create `garrettatx/referrer-capture-astro`, public or private?
-   Needed before P&P can depend on it.
-2. **Retention window** — 90 days proposed. GD currently uses 30.
-3. **Migrate Garrett Digital too?** GD's tracker has the split-brain model in §2.5
+1. **Migrate Garrett Digital too?** GD's tracker has the split-brain model in §2.5
    and only handles `gclid`. Converging both sites is the point of building this as
    a package, but GD is WordPress + Formidable and a bigger job. Recommend P&P
    first, GD second, as separate work.
