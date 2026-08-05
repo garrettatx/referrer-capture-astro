@@ -174,3 +174,35 @@ describe('map precedence', () => {
     assert.deepEqual(classifyReferrer('https://www.google.com/search?q=x'), { source: 'google', medium: 'organic' });
   });
 });
+
+describe('a campaign source with no medium', () => {
+  // ChatGPT appends utm_source=chatgpt.com to citation links and sets no
+  // medium. Found in live QA landing in generic referral.
+  test('AI assistant source resolves to ai-referral', () => {
+    const t = at({ query: '?utm_source=chatgpt.com' });
+    assert.equal(t.src, 'chatgpt');
+    assert.equal(t.med, 'ai-referral');
+  });
+  test('perplexity source resolves to ai-referral', () => {
+    const t = at({ query: '?utm_source=perplexity.ai' });
+    assert.equal(t.src, 'perplexity');
+    assert.equal(t.med, 'ai-referral');
+  });
+  test('social source resolves to organic-social', () => {
+    const t = at({ query: '?utm_source=linkedin.com' });
+    assert.equal(t.med, 'organic-social');
+  });
+  test('an unrecognized source still falls back to referral', () => {
+    const t = at({ query: '?utm_source=some-partner-site' });
+    assert.equal(t.src, 'some-partner-site');
+    assert.equal(t.med, 'referral');
+  });
+  test('an explicit medium always wins over inference', () => {
+    const t = at({ query: '?utm_source=chatgpt.com&utm_medium=cpc' });
+    assert.equal(t.med, 'cpc');
+  });
+  test('the referrer supplies the medium when the source cannot', () => {
+    const t = at({ query: '?utm_source=partner-xyz', referrer: 'https://www.google.com/' });
+    assert.equal(t.med, 'organic');
+  });
+});

@@ -1,6 +1,6 @@
 {
   "name": "referrer-capture-astro",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Lead attribution capture for Astro sites. Records the visitor's source, medium, and channel, and attaches it to contact form submissions.",
   "keywords": [
     "astro",

@@ -50,15 +50,19 @@ function lookup(host, table) {
     }
     return null;
 }
-/** Classify an external referrer into a source and medium. */
-export function classifyReferrer(referrer) {
-    const host = referrerHost(referrer);
+/**
+ * Match a hostname against the known-platform maps.
+ *
+ * Returns null when nothing matches, so callers can tell "this is a platform we
+ * recognize" from "this is some other website".
+ *
+ * Order matters. Webmail and AI assistants live on search engine domains
+ * (mail.google.com, gemini.google.com), so the specific maps have to be
+ * consulted before the general one or every Gmail click reads as organic search.
+ */
+export function classifyHost(host) {
     if (!host)
-        return { source: 'direct', medium: 'none' };
-    // Order matters. Webmail and AI assistants live on search engine domains
-    // (mail.google.com, gemini.google.com), so the specific maps have to be
-    // consulted before the general one or every Gmail click reads as organic
-    // search.
+        return null;
     const email = lookup(host, EMAIL_CLIENTS);
     if (email)
         return { source: email, medium: 'email' };
@@ -71,7 +75,14 @@ export function classifyReferrer(referrer) {
     const social = lookup(host, SOCIAL_PLATFORMS);
     if (social)
         return { source: social, medium: 'organic-social' };
-    return { source: slug(host), medium: 'referral' };
+    return null;
+}
+/** Classify an external referrer into a source and medium. */
+export function classifyReferrer(referrer) {
+    const host = referrerHost(referrer);
+    if (!host)
+        return { source: 'direct', medium: 'none' };
+    return classifyHost(host) ?? { source: slug(host), medium: 'referral' };
 }
 /** Map a normalized source and medium onto a channel. */
 export function toChannel(source, medium) {
@@ -168,6 +179,24 @@ export function classify(input) {
             medium = CLICK_IDS[paidClick].medium;
         if (!source)
             source = referrer && !internal ? classifyReferrer(referrer).source : 'direct';
+        // A source with no medium is common and easy to misfile. AI assistants are
+        // the live example: ChatGPT appends utm_source=chatgpt.com to citation
+        // links and sets no medium, so defaulting to `referral` buries the arrivals
+        // the ai-referral channel exists to surface. Recognize the source as a
+        // platform first, then fall back to the referrer, then to referral.
+        if (!medium) {
+            const bySource = classifyHost(slug(utmSource));
+            if (bySource) {
+                medium = bySource.medium;
+                if (!utmSource || SOURCE_ALIASES[slug(utmSource)] === undefined)
+                    source = bySource.source;
+            }
+            else if (referrer && !internal) {
+                const byReferrer = classifyReferrer(referrer);
+                if (byReferrer.medium !== 'none')
+                    medium = byReferrer.medium;
+            }
+        }
         if (!medium)
             medium = 'referral';
         return { ...base, src: source, med: medium, m: 'utm' };

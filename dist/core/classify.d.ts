@@ -13,6 +13,20 @@ export declare function clip(value: unknown, max?: number): string;
  * `android-app://` and origin-only referrers browsers increasingly send.
  */
 export declare function referrerHost(referrer: string): string;
+/**
+ * Match a hostname against the known-platform maps.
+ *
+ * Returns null when nothing matches, so callers can tell "this is a platform we
+ * recognize" from "this is some other website".
+ *
+ * Order matters. Webmail and AI assistants live on search engine domains
+ * (mail.google.com, gemini.google.com), so the specific maps have to be
+ * consulted before the general one or every Gmail click reads as organic search.
+ */
+export declare function classifyHost(host: string): {
+    source: string;
+    medium: string;
+} | null;
 /** Classify an external referrer into a source and medium. */
 export declare function classifyReferrer(referrer: string): {
     source: string;
