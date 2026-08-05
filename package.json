@@ -1,0 +1,37 @@
+{
+  "name": "referrer-capture-astro",
+  "version": "0.0.0",
+  "description": "Lead attribution capture for Astro sites. Records the visitor's source, medium, and channel, and attaches it to contact form submissions.",
+  "keywords": [
+    "astro",
+    "attribution",
+    "utm",
+    "lead-source",
+    "marketing-attribution",
+    "cloudflare-pages",
+    "referrer"
+  ],
+  "license": "MIT",
+  "author": "Garrett Digital",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/garrettatx/referrer-capture-astro.git"
+  },
+  "bugs": {
+    "url": "https://github.com/garrettatx/referrer-capture-astro/issues"
+  },
+  "homepage": "https://github.com/garrettatx/referrer-capture-astro#readme",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
