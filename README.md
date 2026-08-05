@@ -11,7 +11,7 @@ you can install today.
 ## Why This Exists
 
 GA4 already reports source and medium in aggregate. What it cannot do is tell you
-that *this particular enquiry* arrived from a Google organic search that landed on
+that *this particular inquiry* arrived from a Google organic search that landed on
 `/services/`. Analytics answers questions about traffic. This answers a question
 about one person who filled out your form.
 
@@ -20,7 +20,7 @@ starts rebuilding analytics dashboards belongs somewhere else.
 
 ## What It Captures
 
-| Channel | Recognised from |
+| Channel | Recognized from |
 |---|---|
 | `paid-search` | `gclid`, `gbraid`, `wbraid`, `msclkid`, or a paid `utm_medium` |
 | `organic-search` | Search engine referrer with no click ID |
@@ -48,7 +48,7 @@ important part.
 2. **Persistence** carries that record across internal navigation. A direct visit
    never overwrites a known source, so someone who arrives from an ad, leaves, and
    returns via a bookmark keeps the ad.
-3. **Normalisation** happens once, on the server, when the form is submitted. Raw
+3. **Normalization** happens once, on the server, when the form is submitted. Raw
    values go over the wire, canonical values come out.
 
 Attribution is additive. If storage is blocked, the script throws, or the payload
@@ -107,7 +107,7 @@ import { mountHiddenFields } from 'referrer-capture-astro/client';
 mountHiddenFields(document.querySelector('#contact-form'));
 ```
 
-Normalise on the server:
+Normalize on the server:
 
 ```js
 import { parseAttribution } from 'referrer-capture-astro/server';
@@ -116,7 +116,7 @@ const attribution = parseAttribution(body.attribution);
 // { source: 'google', medium: 'organic', channel: 'organic-search', ... }
 ```
 
-`parseAttribution` validates, caps length, sanitises, and returns a safe fallback
+`parseAttribution` validates, caps length, sanitizes, and returns a safe fallback
 rather than throwing. Calling code does not need a try/catch to stay upright.
 
 ## Compatibility
@@ -144,10 +144,10 @@ need to gate capture behind their own consent management.
 
 ```bash
 npm install
-npm test        # unit tests for classification and normalisation
+npm test        # unit tests for classification and normalization
 ```
 
-Classification and normalisation are pure functions and carry the logic worth
+Classification and normalization are pure functions and carry the logic worth
 testing. Start there.
 
 ## Documentation
@@ -155,6 +155,6 @@ testing. Start there.
 - [`docs/PLAN.md`](docs/PLAN.md) covers the full design, the attribution model, the
   QA matrix, and the reasoning behind the decisions above.
 
-## Licence
+## License
 
 MIT. See [LICENSE](LICENSE).

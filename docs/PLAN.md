@@ -13,7 +13,7 @@ consumer.
 One job: **tell the person reading the lead email where that lead came from.**
 
 GA4 already reports source/medium in aggregate. What GA4 cannot do is tell the
-person reading the notification that *this specific enquiry* arrived from a Google
+person reading the notification that *this specific inquiry* arrived from a Google
 organic search on `/services/`.
 That per-lead join is the entire value. Everything in this plan is scoped to that,
 and anything that does not serve it is out.
